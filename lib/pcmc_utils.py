@@ -3,7 +3,7 @@ from scipy.optimize import minimize
 
 def neg_L(x,C):
 	"""negative log-likilhood of parameters P of a pcmc model given data in C
-	
+
 	Arguments:
 	x- parameters for PCMC model
 	C- dictionary containing choice sets and counts"""
@@ -14,26 +14,26 @@ def neg_L(x,C):
 		for i in range(len(S)):
 			L-=C[S][i]*pi_S[i]
 	return L
-	
+
 def comp_error(x,C):
 	"""computes expected L1 distance between probability vectors from a pcmc
 	model and empirical distributions
-	
+
 	Arguments:
 	x- model parameters
 	C- empirical data
 	"""
 	err=0
 	nsamp = np.sum(map(np.sum,C.values()))
-	Q = comp_Q(x)		
+	Q = comp_Q(x)
 	for S in C:
 		pi=solve_ctmc(Q[S,:][:,S])
 		err+=(np.sum(C[S])/nsamp)*np.sum(np.abs(pi-C[S]/np.sum(C[S])))
-	return err	
+	return err
 
 def solve_ctmc(Q):
 	"""Solves the stationary distribution of the CTMC whose rate matrix matches
-	the input on off-diagonal entries. 
+	the input on off-diagonal entries.
 	Arguments:
 	Q- rate matrix
 	"""
@@ -52,7 +52,7 @@ def solve_ctmc(Q):
 
 def comp_Q(x):
 	"""reshapes PCMC parameter vector into rate matrix
-	
+
 	input:
 	x- parameter vector of off-diagnoal entries of Q
 	"""
@@ -67,28 +67,27 @@ def cons_pairs(n):
 	"""
 	computes pairs of indices in flattened PCMC parameters x which correspond to
 	q_ij and q_ji
-	
+
 	Arguments:
-	n- number of elements in PCMC model 
+	n- number of elements in PCMC model
 	"""
 	f = lambda i: (n-1)*(i%(n-1)+1)+i/(n-1)
 	pairs = []
 	for i in range(n):
-		for a in [i*(n-1)+x for x in range(i,n-1)]:	
+		for a in [i*(n-1)+x for x in range(i,n-1)]:
 			pairs.append((a,f(a)))
-	
-	return pairs	
 
+	return pairs
 
 def infer(C,n,x=None,epsilon=10**(-3),maxiter=25):
 	"""infers the parameters of a PCMC model using scipy.minimize to do MLE
-	
+
 	Arguments:
 	C- training data
 	n- number of elements in universe
 	x- starting parameters
 	delta- parameter of constraint q_ij+q_ji>=delta
-	maxiter- number of iterations allowed to optimizer 
+	maxiter- number of iterations allowed to optimizer
 	"""
 	bounds=[(epsilon,None)]*(n*(n-1))
 	if x is None:

@@ -102,6 +102,20 @@ def RS_prob(x,sigma):
 		S.remove(sigma[i])
 	return p
 
+def RS_prob_Q(Q,sigma):
+	"""returns the probability of sigma under RS from pcmc
+	Arguments:
+	x- pcmc params
+	"""
+	n = len(sigma)
+	p=1
+	S = range(n)
+	for i in range(n):
+		print S, pi
+		pi = solve_ctmc(Q[S,:][:,S])
+		p*= pi[S.index(sigma[i])]
+		S.remove(sigma[i])
+	return p
 
 def log_RS_prob(x,sigma):
 	"""returns the log probability of sigma under RS from pcmc
