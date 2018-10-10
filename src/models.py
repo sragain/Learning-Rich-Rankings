@@ -9,9 +9,16 @@ from torch.autograd import Variable
 
 class CDM(nn.Module):
     """
-    cdm choice model
+    Implementation of the CDM choice model as a Pytorch module
     """
     def __init__(self,n,d):
+        """
+        Initializes a CDM model
+
+        Args:
+        n- number of items in the universe
+        d- number of dimensions for feature and context embeddings
+        """
         super(CDM, self).__init__()
         self.fs = nn.Parameter(torch.nn.init.normal(torch.Tensor(n,d)))
         self.cs = nn.Parameter(torch.nn.init.normal(torch.Tensor(d,n)))
@@ -20,7 +27,17 @@ class CDM(nn.Module):
         self.n = n
 
     def forward(self,x):
+        """
+        computes the CDM choice probabilities P(.,S)
+
+        Args:
+        x- indicator vector for choice set S, i.e. a 'size(S)-hot' encoding of the
+        choice set, or a batch of these
+        """
+        #compute the utilities of each alternative for the given choice set
         u = x*torch.sum(torch.mm(self.fs,x*self.cs),dim=1)+(1-x)*(-16)
+
+        #softmax of utils gives probs
         p = self.m(u)
         return p
 
@@ -28,38 +45,61 @@ class CDM(nn.Module):
         return 'CDM-d='+str(self.d)#+',ue='+str(self.ue)
 
 class PCMC(nn.Module):
-    def __init__(self,n,batch=True,ep=10**(-3),gamma=None):
-        super(PCMC, self).__init__()
-        if gamma is None:
-            Q = torch.nn.init.uniform(torch.Tensor(n,n),.4,.6)
-        else:
-            #TODO: this need to be figured out for gamma coming off of trained
-            #models, the dimensions are funky between the __main__ code here
-            #and train.py
-            print 'code is deprecated, using random Q'
-            #L = [torch.Tensor(gamma)]*n
-            #Q = torch.cat(L)
-            Q = torch.nn.init.uniform(torch.Tensor(n,n),.4,.6)
-            
+    """
+    Implementation of the PCMC choice model as a pytorch module
+    """
+    def __init__(self,n,batch=True,ep=10**(-3)):#,gamma=None):
+        """
+        Initializes a PCMC model
 
+        Args:
+        n- number of alternatives in universe
+        batch- whether we are doing batch SGD, which plays strangely with PCMC
+        ep- minimum allowed entry of Q, 0 entries can lead to a disconnected Markov chain
+        #gamma- MNL parameters that can be used to initialize a PCMC model,
+                currently deprecated
+        """
+        super(PCMC, self).__init__()
+
+        #TODO: add functionality to initialize with MNL params gamma, template:
+        #if gamma is None:
+            #Q = torch.nn.init.uniform(torch.Tensor(n,n),.4,.6)
+        #else:
+            #print 'code is deprecated, using random Q'
+            #Q = torch.nn.init.uniform(torch.Tensor(n,n),.4,.6)
+
+        #randomly initialize Q
+        Q = torch.nn.init.uniform(torch.Tensor(n,n),.4,.6)
         self.Q = nn.Parameter(Q)
         self.epsilon = ep
+        self.batch = batch
         self.n = n
+
+        #cache vectors used for solving stationary distribution
         self.b = torch.zeros(n)
         self.b[-1]=1
-        self.batch = batch
         self.I = torch.eye(n)
         self.m = nn.LogSoftmax()
 
     def forward(self,x):
+        """
+        computes the PCMC choice probabilities P(.,S)
+
+        Args:
+        x- indicator vector for choice set S, i.e. a 'size(S)-hot' encoding of the
+        choice set, or a batch of such encodings
+        """
+        #batching vectorizes in a peculiar way for PCMC, but works automatically
+        #for other models, so store whether we plan to use batch at model initialization
+        #and encode it here
         if self.batch:
-            L = []
+
+            L = [] #empty list that will later contain choice probs
+
             for S in x.split(1):
                 S=x
                 S_mat = torch.mm(torch.t(S),S)
-                #print S_mat
                 Q = torch.clamp(self.Q*S_mat,min=self.epsilon)
-                #print Q
                 for i in range(self.n-1):
                     Q[i,i]=-torch.sum(Q[i,:])+Q[i,i]
                 Q[:,self.n-1]=S
@@ -79,17 +119,7 @@ class PCMC(nn.Module):
             b = Variable(torch.zeros(self.n))
             b[-1]=1
             pi,LU = torch.gesv(b,torch.t(Q))
-            #print 'S'
-            #print S
-            #print 'LU'
-            #print LU
-            #print 'Q'
-            #print Q.data.numpy()
-            #print 'pi raw'
-            #print pi.data.numpy()
-
             pi = S*torch.t(pi)+1e-16
-            #print pi.data.numpy()
 
             return torch.log(pi/torch.sum(pi))
 
@@ -98,16 +128,22 @@ class PCMC(nn.Module):
 
 class MNL(nn.Module):
     """
-    mnl choice model
+    Implementation of MNL choice model as a Pytorch module
     """
     def __init__(self,n):
         super(MNL, self).__init__()
-        #self.u = nn.Linear(n,1,bias=False)
         self.u = nn.Parameter(torch.nn.init.normal(torch.Tensor(n)))
         self.n = n
         self.m = nn.Softmax()
 
     def forward(self, x):
+        """
+        computes the PCMC choice probabilities P(.,S)
+
+        Args:
+        x- indicator vector for choice set S, i.e. a 'size(S)-hot' encoding of the
+        choice set, or a batch of such encodings
+        """        
         u = x*self.u+(1-x)*-16
         p = self.m(u)
         return torch.log(p/torch.sum(p))

@@ -4,27 +4,43 @@ from scipy.stats import sem
 import os,argparse,pickle
 from matplotlib import rc
 
-
 def plot_one_scores_setsizes_with_hist(Scores,dset,dsetnum,dtype):
+    """
+    plots choice probability log losses vs choice setsize for a single dataset,
+    along with a histogram showing the number of such choices, i.e. the
+    partial ranking lengths for that dataset
+
+    Args:
+    Scores- dictionary of losses computed by test.py
+    dset- name of dataset directory, e.g. election
+    dsetnum- name of particular dataset considered, e.g. dublin-north
+    dtype- '.soi' for partial rankings, '.soc' for full rankings
+    """
+    #compute number of alternaties
     n = max([k for k in Scores[Scores.keys()[0]].keys()])
 
-    print n
+    #boolean of whether we are considering a dataset primed for repeated elimination
     re = ('RE' in dsetnum)
+    #helper string
     s = ''
     if re:
         s+= '-RE'
+
     plt.figure(figsize=(9,7))
     ax1 = plt.subplot2grid((3,1), (0,0), rowspan=2)
     ax2 = plt.subplot2grid((3,1), (2,0), rowspan=1)
+
+    #compute losses and errorbars for all the choice models we may have considered
     for model in ['MNL','CDM-d=1','CDM-d=4','CDM-d=8','PCMC']:
         positions = [];means=[];sems=[];sizes=[]
-
+        if model not in Scores:
+            continue
+            
         for i in Scores[model]:
             if len(Scores[model][i])==0:
                 continue
 
             positions.append(n-i+1)
-            #sizes.append(i)
             scores = np.array(Scores[model][i])
             means.append(np.mean(scores))
             sems.append(sem(scores))
@@ -38,26 +54,25 @@ def plot_one_scores_setsizes_with_hist(Scores,dset,dsetnum,dtype):
 
     #get name for saving plot
     dashes = [pos for pos, char in enumerate(dsetnum) if char == '-']
-
     last_dash = dashes[-1-int(re)]
     dset_name = dsetnum[:last_dash]
+
+    #compute L_unif by adjusting for choice set size
     unif_losses = np.array(map(lambda pos: np.log(n-pos+1),positions))
     if re:
         unif_losses = unif_losses[::-1]
+
+    #make a pretty plot
     ax1.plot(positions,unif_losses,label='uniform',linestyle='--')
     ax1.set_xlim(.5,np.amax(positions)+.5)
-    #ax1.set_xlabel('k (position in ranking)')
     ax1.set_xticks(positions)
     ax1.set_xlabel('k (position in ranking)')
     ax1.set_ylim(0,ax1.get_ylim()[1])
     ax1.set_ylabel(r'$\ell(k;\hat \theta_{MLE},T)$')
-    ax1.set_title(r'{\tt '+dset_name+s+r'}')#, $\ell_{\log}(\cdot,\hat \theta_{MLE})$ vs. position')
+    ax1.set_title(r'{\tt '+dset_name+s+r'}')
     ax1.legend(loc='best')
 
-
-
-    #plt.savefig(os.getcwd()+os.sep+'plots'+os.sep+dset+os.sep+dset_name+s+'.pdf')
-    n = max([k for k in Scores[Scores.keys()[0]].keys()])
+    #count how many times each position occured
     counts = np.zeros(n)
     m = Scores.keys()[0]
     for i in Scores[m]:
@@ -85,12 +100,21 @@ def plot_one_scores_setsizes_with_hist(Scores,dset,dsetnum,dtype):
         ax1.set_xticks([x for x in positions if x==1 or x%5==0])
         ax2.set_xticks([x for x in positions if x==1 or x%5==0])
     #ax2.legend(loc='best')
-    #f.tight_layout()
     plt.tight_layout()
     plt.savefig(os.getcwd()+os.sep+'plots'+os.sep+dset+os.sep+dset_name+s+'-hist.pdf')
     plt.clf()
 
 def plot_one_scores_setsizes(Scores,dset,dsetnum,dtype):
+    """
+    plots choice probability log losses vs choice setsize for a single dataset,
+    but without the histogram
+
+    Args:
+    Scores- dictionary of losses computed by test.py
+    dset- name of dataset directory, e.g. election
+    dsetnum- name of particular dataset considered, e.g. dublin-north
+    dtype- '.soi' for partial rankings, '.soc' for full rankings
+    """
     n = max([k for k in Scores[Scores.keys()[0]].keys()])
     re = ('RE' in dsetnum)
     s = ''
@@ -99,6 +123,8 @@ def plot_one_scores_setsizes(Scores,dset,dsetnum,dtype):
 
     for model in ['MNL','CDM-d=1','CDM-d=4','CDM-d=8','PCMC']:
         positions = [];means=[];sems=[];sizes=[]
+        if model not in Scores:
+            continue
 
         for i in Scores[model]:
             if len(Scores[model][i])==0:
@@ -144,6 +170,17 @@ def plot_one_scores_setsizes(Scores,dset,dsetnum,dtype):
     plt.clf()
 
 def print_one_losses(Scores,dset,dsetnum,dtype,unif=False,re=False):
+    """
+    outputs the log losses for one dataset to a text file
+
+    Args:
+    Scores- log losses as a function of choice set size
+    dset- collection of datasets this dataset belongs to
+    dsetnum- specific name of dataset among the collection
+    dtype- 'soi' or 'soc'
+    unif- whether to output L_unif (see paper) or standard log loss
+    re- whether this was a repeated elimination model
+    """
     means = []; sems = [];labels = []
     model_list = ['MNL','CDM-d=1','CDM-d=4','CDM-d=8','PCMC']
     for model in model_list:
@@ -178,6 +215,17 @@ def print_one_losses(Scores,dset,dsetnum,dtype,unif=False,re=False):
             f.write(("%.3f" % se)+ ' & ')
 
 def print_all_losses(Scores,dset,dtype,unif=False,re=False):
+    """
+    outputs the log losses for one dataset to a text file
+
+    Args:
+    Scores- log losses as a function of choice set size
+    dset- collection of datasets this dataset belongs to
+    dsetnum- specific name of dataset among the collection
+    dtype- 'soi' or 'soc'
+    unif- whether to output L_unif (see paper) or standard log loss
+    re- whether this was a repeated elimination model
+    """
     means = {}; sems = {}
     model_list = ['MNL','CDM-d=1','CDM-d=4','CDM-d=8','PCMC']
     rankings = 0
@@ -235,28 +283,37 @@ def print_all_losses(Scores,dset,dtype,unif=False,re=False):
             se = sems[idx]
             f.write(("%.3f" % se)+' & ')
 
-if __name__ == '__main__':
-    #get command line arguments
+def parse():
+    """
+    Handles command line inputs and outputs correct plots or statistics
+    """
+
+    #set some parameters to make plots prettier
     np.set_printoptions(suppress=True, precision=3)
     plt.rcParams.update({'font.size': 14})
-
     rc('text', usetex=True)
+
+    #argparser reads in the plots/data we want
     parser = argparse.ArgumentParser(description='ctr data parser')
     parser.add_argument('-dset', help="dataset name", default=None)
-    parser.add_argument('-dtype', help="dataset type", default='soi')
+    parser.add_argument('-dtype', help="data type", default='soi')
     parser.add_argument('-setsize', help = 'whether to compute losses by setsize', default='y')
-    parser.add_argument('-all', help='whether to aggregate over all datasets (y/n)', default='n')
-    parser.add_argument('-re', help='whether to plot for re data (y/n)', default='n')
+    parser.add_argument('-all', help='whether to aggregate over all datasets in directory (y/n)', default='n')
+    parser.add_argument('-re', help='whether to plot for RE models (y/n)', default='n')
     parser.add_argument('-hist', help='whether to include a histogram of the ranking lengths(y/n)', default='n')
     args = parser.parse_args()
-    if args.dset not in ['sushi','soi','nascar','letor','soc','election']:
-        print 'invalid dataset'
+
+    #checks whether the dataset is in the right place
+    if args.dset not in os.listdir(os.getcwd()+os.sep+'cache'+os.sep+'computed_errors'):
+        print 'no errors found in cache to plot'
         assert False
+
+    #checks whether the datatype is known
     if args.dtype not in ['soi','soc']:
         print 'invalid datatype'
         assert False
 
-    #load in the already compute errors
+    #compute booleans and/or strings based on other input arguments
     all = (args.all == 'y')
     setsize = (args.setsize=='y')
     re = (args.re=='y')
@@ -265,8 +322,10 @@ if __name__ == '__main__':
     if re:
         s+='-RE'
 
-    path = os.getcwd()+os.sep+'errors'+os.sep+args.dset+os.sep
+    #compute filepath of errors to plot
+    path = os.getcwd()+os.sep+'cache'+os.sep+'computed_errors'+os.sep+args.dset+os.sep
 
+    #whether we are grouping losses by choice set size
     if setsize:
         Scores = pickle.load(open(path+args.dtype+'-setsize'+s+'.p'))
     else:
@@ -274,19 +333,24 @@ if __name__ == '__main__':
 
     #call the appropriate plotting or printing function
     if all:
-        assert not setsize
-        print_all_losses(Scores,args.dset,args.dtype,re=re)
-        #print_all_losses(Scores_unif,args.dset,dataset,args.dtype,unif=True)
+        if setsize:
+            print 'comparing losses as a function of choice set size across different datasets is not supported'
+        else:
+            #outputs combined losses for all the datasets in the folder to a text file
+            print 'computing losses for all datasets in '+args.dset
+            print_all_losses(Scores,args.dset,args.dtype,re=re)
     elif setsize:
         for dataset in Scores:
-            print dataset
+            print 'plotting losses for '+dataset
             if args.dtype == 'soi' and hist:
                 plot_one_scores_setsizes_with_hist(Scores[dataset],args.dset,dataset,args.dtype)
             else:
                 plot_one_scores_setsizes(Scores[dataset],args.dset,dataset,args.dtype)
 
-    else:
-        assert False
+    else: #
         for dataset in Scores:
             print dataset
             print_one_losses(Scores[dataset],args.dset,dataset,args.dtype,re=re)
+
+if __name__ == '__main__':
+    parse()

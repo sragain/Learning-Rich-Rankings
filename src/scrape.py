@@ -2,7 +2,20 @@ import numpy as np
 import os,sys
 
 def RS_choices(L,n):
-	#C = {tuple(range(n)):np.ones(n)*alpha}
+	"""
+	Encodes RS(sigma) choices for a list of rankings with a
+	stack of indicator vectors for the choice sets with a 'one-hot'
+	encoding of choices
+
+	Args:
+	L- list of (possibly partial) rankings
+	n- number of alternatives in the
+
+	Returns:
+	X- X[j,:] is an indicator vector for the j-th choice set
+	Y- Y[j,:] is a 'one-hot' encoding of the j-th choice
+	"""
+	#computes the total number of choices
 	m = reduce(lambda x,y: x+y,map(len,L))
 	X = np.zeros((m,n)); Y = np.empty(m)
 	i = 0; j = 0
@@ -17,13 +30,22 @@ def RS_choices(L,n):
 	return X,Y.astype(int)
 
 def RE_choices(L,n):
+	"""
+	computes the RE choices for a list of (full) rankings L by computing the
+	RS choices on a reveral of the rankings
+	"""
 	return RS_choices(map(lambda s: s[::-1],L),n,alpha)
 
 def scrape_soi(filename):
+	"""
+	scrapes an soi file into a list of (possibly partial) rankings
+
+	Args:
+	filename- name of soi file to scrape
+	"""
 	L = []
 	with open(filename,'r') as f:
 		N = int(f.next())
-		#print N
 		if N<2:
 			return [],0
 		#sometimes the first candidate is labeled '1', sometimes '0'
@@ -44,6 +66,12 @@ def scrape_soi(filename):
 	return L,N
 
 def scrape_soc(filename):
+	"""
+	scrapes an soi file into a list of complete rankings
+
+	Args:
+	filename- name of soc file to scrape
+	"""
 	L = []
 	with open(filename,'r') as f:
 		N = int(f.next())

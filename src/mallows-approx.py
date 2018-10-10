@@ -7,6 +7,18 @@ from sklearn.cross_validation import KFold
 from scipy.stats import sem
 
 def fit_mallows_approx(perms,n):
+    """
+    fits an approximation of the Mallows model:
+    P(sigma; sigma_0, theta) \propto exp(theta*tau(sigma,sigma_0))
+
+    Args:
+    perms- list of partial rankings
+    n- number of items ranked
+
+    Returns:
+    sigma_0- reference permutation
+    theta- concentration parameter
+    """
     C = np.zeros((n,n))
     pairs = 0
     for sigma in perms:
@@ -33,22 +45,43 @@ def fit_mallows_approx(perms,n):
     return sigma_0,theta
 
 def inversions(sigma_0,sigma):
+    """
+    counts the number of pairs inverted (Kendall's tau distance) between two
+    partial rankings
+
+    Args:
+    sigma_0- full ranking
+    sigma- partial or full ranking
+    """
+
+    #restrict sigma_0 to items ranked by sigma
     sigma_0_S = [x for x in sigma_0 if x in sigma]
+
+    #count up inversions
     for x in sigma_0_S:
         inv+=sigma.index(x)
     return inv
 
-def mallows_choice_prob(S,sigma,theta):
-	"""returns a vector of the selection probabilities of S under a mallows
-	model with sigma and theta"""
-	sig = [x for x in sigma if x in S]
+def mallows_choice_prob(S,sigma_0,theta):
+	"""
+    computes choice probabilities P(.,S) under a Mallows
+	model with reference perm sigma_0 and concentration param theta
+
+    Args:
+    S- choice set
+    sigma_0- reference permutation for Mallows model
+    theta- concentration param for Mallows model
+    """
+	sig = [x for x in sigma_0 if x in S]
 	loc = map(lambda i: sig.index(i),S)
 	p = np.exp(-theta* np.array(loc))
 	return p/np.sum(p)
 
 def log_RS_mallows_prob_partial(sigma_0,theta,sigma):
-	"""returns the probability of sigma under Mallows
-	Arguments:
+	"""
+    returns the log of probability of partial or full ranking under Mallows
+
+    Args:
 	sigma_0- reference perm
 	theta- concentration parameter
 	sigma- perm to compute probability of
@@ -65,11 +98,16 @@ def log_RS_mallows_prob_partial(sigma_0,theta,sigma):
 def test_mallows_approx_unif(sigma_0,theta,sigmas):
     """
     computes log-liklihood of mallows for test lists
+
+    Args:
+    sigma_0- reference permutation
+    theta- concentration parameter
+    sigmas- list of permutations to compute probability of
     """
     n = len(sigma_0)
-    #unif_losses = np.cumsum(map(np.log,range(1,n+1)[::-1]))
-    #losses = map(lambda sigma: unif_losses[len(sigma)-1]-log_RS_mallows_prob_partial(sigma_0,theta,sigma),sigmas)
+    #compute log probs for test rankings
     losses = map(lambda sigma: log_RS_mallows_prob_partial(sigma_0,theta,sigma),sigmas)
+    #log likelihood is mean of log probs
     return np.mean(losses)
 
 def cv(L,n,K=5):
@@ -88,11 +126,9 @@ def cv(L,n,K=5):
     kf = KFold(len(L),n_folds=K,shuffle=True)
     k = 0
     split_store = {'train':[],'test':[],'data':L,'mallows':[],'L_log':[]}
-    for train,test in kf:#splits:
+    for train,test in kf:
         print 'fold'+str(k)
         sigma_0_hat, theta_hat = fit_mallows_approx(L,n)
-        #print sigma_0_hat
-        #print theta_hat
 
         split_store['mallows'].append({'sigma_0':sigma_0_hat,'theta':theta_hat})
 
@@ -103,21 +139,29 @@ def cv(L,n,K=5):
         split_store['L_log'].append(test_mallows_approx_unif(sigma_0_hat,theta_hat,test_lists))
         k+=1
 
-
     return split_store
 
 def trawl(path,dset,dtype,cache=False,RE=True):
     """
-    trawls over a directory and fits models to all data files
+    trawls over the set of learned models for a given collection of datasets,
+    and fits and tests the Mallows approximation over the cached test and train
+    splits
+
+    Args:
+    path- directory containing pickled cv train/test splits
+    dset- collection of datasets
+    dtype- 'soi' or 'soc'
+    cache- whether to cache the outputs
+    RE- whether to do repeated eliminaton
     """
     job_list = []
-    save_path = os.getcwd()+os.sep+'learned'+os.sep+args.dset+os.sep
+    save_path = os.getcwd()+os.sep+'cache'+os.sep+'learned_models'+os.sep+args.dset+os.sep
     files = os.listdir(path)
     shuffle(files)
     L_log_RS = []
     L_log_RE = []
 
-    DATASETS = [fname[:-6]+'.'+dtype for fname in os.listdir(os.getcwd()+os.sep+'learned'+os.sep+dset)]
+    DATASETS = [fname[:-6]+'.'+dtype for fname in os.listdir(os.getcwd()+os.sep+'cache'+os.sep+'learned_models'+os.sep+dset)]
     RE = (RE and (dtype=='soc'))
     for filename in files:
         if filename.endswith(dtype):
@@ -136,17 +180,13 @@ def trawl(path,dset,dtype,cache=False,RE=True):
             if (dset == 'soi' or dset=='soc') and (n>20 or len(L)>1000):
                 continue
 
-            #job_list.append((L,n,'-ma'))
             split_store_RS = cv(L,n)
-            #print split_store_RS.keys()
             if cache:
                 pickle.dump(split_store_RS,open(save_path+filename[:-4]+'-'+dtype+'-mallows.p','wb'))
             L_log_RS.extend(split_store_RS['L_log'])
-            #print sem(split_store_RS['L_log'])
             if RE:
                 split_store_RE = cv(map(lambda sigma: sigma[::-1],L),n)
                 L_log_RE.extend(split_store_RE['L_log'])
-                #print sem(split_store_RS['L_log'])
                 if cache:
                     pickle.dump(split_store_RE,open(save_path+filename[:-4]+'-'+dtype+'-mallows-RE.p','wb'))
     print 'RS L_log mean and sem'
@@ -155,11 +195,12 @@ def trawl(path,dset,dtype,cache=False,RE=True):
     print sem(L_log_RS)
     if RE:
         print 'RE L_log mean and sem'
-        #print L_log_RE
         print np.mean(L_log_RE)
         print sem(L_log_RE)
 
 if __name__ == '__main__':
+
+    #code for running from the command line
     np.set_printoptions(suppress=True, precision=3)
     parser = argparse.ArgumentParser(description='mallows approx data parser')
     parser.add_argument('-dset', help="dataset name", default=None)

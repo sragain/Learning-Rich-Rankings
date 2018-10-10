@@ -1,4 +1,5 @@
 *.pyc
 *.p
 *.pdf
+*.txt
 /old/

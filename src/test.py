@@ -85,6 +85,10 @@ def evaluate_log_loss(perms,n,models_k,Losses = None,Losses_unif = None):
     return Losses,Losses_unif
 
 def max2(l,default=0):
+    """
+    returns the max of a list, or default if the list is empty
+    helper function
+    """
     if l ==[]:
         return default
     return max(l)
@@ -93,7 +97,7 @@ def trawl(path,dset,dtype,setsize,RE):
     """
     trawls over a directory and fits models to all data files
     """
-    save_path = os.getcwd()+os.sep+'errors'+os.sep+dset+os.sep
+    save_path = os.getcwd()+os.sep+'cache'+os.sep+'computed_errors'+os.sep+dset+os.sep
     Losses = {}; Losses_unif = {}
 
     for modelpath in os.listdir(path):
@@ -108,7 +112,7 @@ def trawl(path,dset,dtype,setsize,RE):
         n = reduce(lambda x,y: max(x,y),map(max2,L))+1
         #if 'n' not in Losses:
         #    Losses['n']=n
-        print modelpath,n,len(L),max(map(len,L))
+        print 'Computing losses for '+modelpath#,n,len(L),max(map(len,L))
 
         train = cv_data['train']; test = cv_data['test']; L = cv_data['data']
         Losses[modelpath]={}#{'n':n}
@@ -177,5 +181,5 @@ if __name__ == '__main__':
 
     RE = args.re == 'y'
     setsize = args.setsize == 'y'
-    path = os.getcwd()+os.sep+'learned'+os.sep+args.dset
+    path = os.getcwd()+os.sep+'cache'+os.sep+'learned_models'+os.sep+args.dset
     trawl(path,args.dset,args.dtype,setsize,RE)

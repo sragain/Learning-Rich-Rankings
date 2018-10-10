@@ -1,7 +1,6 @@
 import sys,os,pickle,argparse
 import numpy as np
 from models import *
-from utils import *
 #from sklearn.model_selection import KFold
 from sklearn.cross_validation import KFold
 from scrape import *
@@ -16,8 +15,12 @@ def fit(X,Y,model,criterion= nn.NLLLoss(),epochs=20,batch_size=1,verbose=True,pr
     X- Indicator vectors for choice sets
     Y- indices of choices
     model- choice model to fit
+    criterion- which loss function to use (default to negative log likelihood for MLE)
     epochs- number of times to loop over the training data
-    batch- whether to batch samples
+    batch_size- how large to make batches
+    verbose- whether to print updates as training goes on
+    print_batches- how often to print updates on training
+    opt- which optimizer to use 'SGD' or 'Adam'
     """
     X = torch.Tensor(X)
     Y = torch.LongTensor(Y.astype(int))
@@ -34,7 +37,7 @@ def fit(X,Y,model,criterion= nn.NLLLoss(),epochs=20,batch_size=1,verbose=True,pr
 
     for epoch in range(epochs):  # loop over the dataset multiple times
         running_loss = 0.0
-        print epoch
+        print 'Starting epoch '+str(epoch)+' of '+str(epochs)
         for i, data in enumerate(dataloader, 0):
             inputs, labels = data
 
@@ -44,11 +47,13 @@ def fit(X,Y,model,criterion= nn.NLLLoss(),epochs=20,batch_size=1,verbose=True,pr
             # zero the parameter gradients
             optimizer.zero_grad()
 
-            # forward + backward + optimize
+            #compute predictions from inputs
             outputs = model(inputs)
+            #compute losses from current predictions
             loss = criterion(outputs, labels)
-
+            #do backprop
             loss.backward()
+            #take a step with the optimizer
             optimizer.step()
 
             # print statistics
@@ -56,7 +61,7 @@ def fit(X,Y,model,criterion= nn.NLLLoss(),epochs=20,batch_size=1,verbose=True,pr
             if not verbose:
                 continue
             if i % print_batches == print_batches-1:    # print every 200 mini-batches
-                print('[%d, %5d] loss: %.3f' %
+                print('(epoch %2d, %5d samples), avg loss: %.3f' %
                     (epoch + 1, (i + 1)*batch_size, running_loss / print_batches))
                 running_loss = 0.0
     return model
@@ -82,12 +87,12 @@ def cv(L,n,models,save_path,K=5,epochs=20,batch_size=1,opt='Adam',seed=True,RE=F
         split_store[str(model)]=[]
     for train,test in kf:#splits:
 
-        print 'fold'+str(k)
+        print 'Beginning fold'+str(k)+' of '+str(K)
 
         #scrape training choices and fit model
         X_train,Y_train = RS_choices([L[x] for x in train],n)
         for model in models:
-            print model
+            print 'training RS-'+str(model)
             if seed and str(model) == 'PCMC':
                 utils = models[0].parameters().next().data.numpy()
                 #print utils
@@ -109,59 +114,99 @@ def cv(L,n,models,save_path,K=5,epochs=20,batch_size=1,opt='Adam',seed=True,RE=F
     return 0
 
 def parallel_helper(tup):
+    """
+    unpacks a tuple so that we can apply the function cv in parallel
+    (Pool does not allow mapping of an anonymous function)
+    """
     L,n,models,save_path,epochs,batch_size,opt,seed,RE = tup
     return cv(L,n,models,save_path,epochs=epochs,batch_size=batch_size,opt=opt,seed=seed,RE=RE)
 
-def trawl(path,dtype,epochs,parallel=True,batch_size=1,max_n=30,max_rankings=1000,opt='Adam',num_dsets=10,seed=True,RE=False):
+def trawl(dset,dtype,epochs,parallel=False,batch_size=1,max_n=30,max_rankings=1000,opt='Adam',num_dsets=10,seed=True,RE=False):
     """
     trawls over a directory and fits models to all data files
+
+    Args:
+    dset- name of dataset(s) considered
+    dtype- 'soi' for partial rankings, 'soc' for complete rankings
+    epochs- number of times to loop over the data
+    parallel- whether to train models in parallel over the datasets in the directory
+    batch_size- number of choices to train on at a time
+    max_n- largest number of alternatives allowed to train on a dataset
+    max_rankings- maximum number of rankings to fit a dataset
+    opt- which optimizer to use
+    num_dsets- number of datasets to fit
+    seed- whether to seed PCMC
+    RE- whether to compute repeated elimianation (RS if false)
     """
-    job_list = []
-    save_path = os.getcwd()+os.sep+'learned'+os.sep+args.dset+os.sep
+
+
+    #we will loop over the datasets stored in this directory
+    path = os.getcwd()+os.sep+'data'+os.sep+dset
     files = os.listdir(path)
+    #shuffle(files)
+
+    #this is where we'll save the output models
+    save_path = os.getcwd()+os.sep+'cache'+os.sep+'learned_models'+os.sep+dset+os.sep
+
+    job_list = []
     batch = (batch_size>1)
-    shuffle(files)
-    for filename in files:
-        if filename.endswith(args.dtype):
+    for filename in files:#loop over the directory
+        if filename.endswith(dtype):#will
             filepath = path+os.sep+filename
-            if args.dtype=='soi':
+            if dtype=='soi':
                 L,n = scrape_soi(filepath)
             else:
                 L,n = scrape_soc(filepath)
-            if len(L)<=10 or len(L)>max_rankings or n>max_n:#throw out more than 1000 data points
-                print n,sum(map(len,L))
-                print filename+' skipped'
+            if len(L)<=10 or len(L)>max_rankings or n>max_n:
+                if len(L)<=10:
+                    reason = 'too few rankings- '+str(len(L))+', min is 10'
+                elif len(L)>max_rankings:
+                    reason = 'too many rankings- '+str(len(L))+', max is '+str(max_rankings)
+                else:
+                    reason = 'too many alternatives- '+str(n)+', max is '+str(max_n)
+                print filename+' skipped, '+reason
                 continue
             else:
-                print n,sum(map(len,L))
                 print filename+' added'
+
             #collect models
             models = []
-
             for d in [1,4,8]:
                 if d>n:
                     continue
                 models.append(CDM(n=n,d=d))
-
             models.append(MNL(n))
             models.append(PCMC(n,batch=batch))
+
+            #append tuple containing all the ojects needed to train the model on the dataset
             job_list.append((L,n,models,save_path+filename[:-4]+'-'+dtype,epochs,batch_size,opt,seed,False))
             if RE:
                 job_list.append((map(lambda x:x[::-1],L),n,models,save_path+filename[:-4]+'-'+dtype,epochs,batch_size,opt,seed,True))
             if len(job_list)>=num_dsets:
+                print 'maximum number of datasets reached'
                 break
 
     print str(len(job_list))+' datasets total'
-    print str(sum(map(lambda x: len(x[0]),job_list)))+ 'total rankings'
+    print str(sum(map(lambda x: len(x[0]),job_list)))+ ' total rankings'
+    #sorts the jobs by number of alternatives*number of (partial) rankings
+    #will roughly be the number of choices, up to partial ranking length
     sorted(job_list,key=lambda x: x[1]*len(x[0]))
-    map(parallel_helper,job_list)
+    #training for each dataset can be done in parallel with this
+    if parallel:
+        p = Pool(4)
+        p.map(parallel_helper,job_list)
+    else:
+        map(parallel_helper,job_list)
 
-if __name__ == '__main__':
+def parse():
+    """
+    parses command line args, run when train.py is __main__
+    """
     np.set_printoptions(suppress=True, precision=3)
     parser = argparse.ArgumentParser(description='ctr data parser')
     parser.add_argument('-dset', help="dataset name", default=None)
     parser.add_argument('-dtype', help="dataset type", default ='soi')
-    parser.add_argument('-epochs', help="number of epochs to use", default='5')
+    parser.add_argument('-epochs', help="number of epochs to use", default='10')
     parser.add_argument('-batch_size', help='batch_size for training', default = '1')
     parser.add_argument('-max_n', help='maximum number of items ranked', default = '10')
     parser.add_argument('-max_rankings', help='maximum number of rankings', default = '1000')
@@ -169,8 +214,8 @@ if __name__ == '__main__':
     parser.add_argument('-num_dsets', help='how many datasets to use', default='100')
     parser.add_argument('-seed_pcmc', help='whether to seed pcmc with MNL (y/n)', default = 'n')
     parser.add_argument('-fit_re', help='whether to train RE models (y/n)', default = 'n')
-    #parser.add_argument('-min_rankings', help='minimium number of rankings', default = '10')
     args = parser.parse_args()
+
     if args.dset not in ['sushi','soi','nascar','letor','soc','election']:
         print 'wrong data folder'
         assert False
@@ -192,6 +237,9 @@ if __name__ == '__main__':
         print 'y or n required for -seed_pcmc'
     seed = (args.seed_pcmc=='y')
     re = (args.fit_re == 'y')
-    trawl(path,args.dtype,epochs=int(args.epochs),batch_size=int(args.batch_size),
+    trawl(args.dset,args.dtype,epochs=int(args.epochs),batch_size=int(args.batch_size),
           max_n=int(args.max_n),max_rankings=int(args.max_rankings),opt=args.opt,
           num_dsets=int(args.num_dsets),seed=seed,RE=re)
+
+if __name__ == '__main__':
+    parse()
