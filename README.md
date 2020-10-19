@@ -1,10 +1,8 @@
 # CTR
 
-Oct 9, 2018
+Oct 19, 2020
 
-This repository contains the code used for the paper Choosing to Rank, read it on  [arxiv](https://arxiv.org/pdf/1809.05139.pdf) for details. The repository uses PyTorch to learn probabilistic models for ranking data by learning on discrete choice data made from rankings.
-
-Please direct any questions, comments, bugs, concerns, or otherwise to [Stephen Ragain](https://stanford.edu/~sragain)
+This repository contains the code used for the paper [Learning Rich Rankings](https://arjunsesh.github.io/files/lrr_neurips.pdf). The repository uses PyTorch to learn probabilistic models for ranking data by learning on discrete choice data made from rankings.
 
 Data
 ====
@@ -20,7 +18,7 @@ To fit a suite of repeated selection models to a dataset, we simply run src/trai
 python src/train.py -dset=letor -num_dsets=10
 ```
 
-This command will automatically loop over the directory and fit 5 models, RS-PCMC, RS-CDM with d=1,2 and 4, and RS-MNL (a Plackett-Luce model), to train sets for 5-fold CV to a random num_dsets=10 datasets in the data/letor directory which meet the other default requirements, e.g. a maximum of 1000 rankings. I have capped the number of datasets to 10 in this example so that the training is expedient- training 5 models on 5 folds means that we are training 250 models here, using a default of 10 epochs for each.
+This command will automatically loop over the directory and fit 4 models, RS-CDM with d=1,4 and 8, and RS-MNL (a Plackett-Luce model), to train sets for 5-fold CV to a random num_dsets=10 datasets in the data/letor directory which meet the other default requirements, e.g. a maximum of 1000 rankings. I have capped the number of datasets to 10 in this example so that the training is expedient- training 5 models on 5 folds means that we are training 250 models here, using a default of 10 epochs for each.
 
 Across different collections of datasets in the data folder there is significant heterogeneity in the number of alternatives ranked, number of rankings, lengths (mostly partial vs. mostly complete) and number of datasets each collection, so the default values often need to be tweaked depending on the data we want to fit.
 
@@ -46,7 +44,7 @@ python src/plot.py -dset=letor -hist=y
 We've used the letor datasets so far because they are very small and thus allow for fast training and testing, but the histograms and plots will show that many of these datasets are too small to have interesting output, and comparing the performance across many datasets of various sizes can be difficult. If we want to look at simple averages of out-of-sample log-likelihood, we can compute and print these to a text file via:
 
 ```python
-python src/test.py -dset-letor -setsize=n
+python src/test.py -dset=letor -setsize=n
 python src/plot.py -dset=letor -setsize=n -all=y
 ```
 
