@@ -7,6 +7,41 @@ import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
 
+class BP(nn.Module):
+    """
+    Implementation of the Bastell-Polking k-th order model as a pytorch module
+    """
+    def __init__(self,n,k,d):
+        """
+        Initializes a k-th order Batsell-Polking model
+
+        Args:
+        n- number of items in universe
+        k- order of the model
+        d- rank of the model
+        """
+        super(BP,self).__init__()
+        shape = tuple([n]*k)
+        self.U = nn.Parameter(torch.nn.init.normal_(torch.Tensor(*shape)))
+        #self.F = nn.Parameter(torch.nn.init.normal(torch.Tensor(n,k,d)))
+        self.k = k
+        self.n = n
+        self.d= d
+        self.m = nn.LogSoftmax()
+
+    def forward(self,x):
+        """
+        Computes choice probabilities for k-th order BP model
+        """
+        utils = self.U
+        for _ in range(self.k-1):
+            utils = torch.matmul(utils,torch.squeeze(x))
+        utils = x*utils+(1-x)*(-16)
+        return self.m(utils)
+
+    def __str__(self):
+        return 'BP:k='+str(self.k)
+
 class CDM(nn.Module):
     """
     Implementation of the CDM choice model as a Pytorch module
@@ -116,9 +151,9 @@ class PCMC(nn.Module):
             for i in range(self.n-1):
                 Q[i,i]=-torch.sum(Q[i,:])+Q[i,i]
             Q[:,self.n-1]=S
-            b = Variable(torch.zeros(self.n))
+            b = Variable(torch.zeros(self.n,1))
             b[-1]=1
-            pi,LU = torch.gesv(b,torch.t(Q))
+            pi,LU = torch.solve(b,torch.t(Q))
             pi = S*torch.t(pi)+1e-16
 
             return torch.log(pi/torch.sum(pi))
@@ -143,7 +178,7 @@ class MNL(nn.Module):
         Args:
         x- indicator vector for choice set S, i.e. a 'size(S)-hot' encoding of the
         choice set, or a batch of such encodings
-        """        
+        """
         u = x*self.u+(1-x)*-16
         p = self.m(u)
         return torch.log(p/torch.sum(p))
@@ -154,7 +189,7 @@ class MNL(nn.Module):
 if __name__ == '__main__':
     # some testing code
     np.set_printoptions(suppress=True,precision=3)
-    n = 5;ns=200;d=2;mnl_data=True
+    n = 5;ns=200;d=2;mnl_data=False
     X = np.zeros((ns,n))
     Y = np.empty(ns).astype(int)
     gamma = np.random.rand(n)
@@ -177,19 +212,20 @@ if __name__ == '__main__':
     dataset = torch.utils.data.TensorDataset(X,Y)
     dataloader = torch.utils.data.DataLoader(dataset)#,batch_size=2)
     criterion = nn.NLLLoss()
-    models = [MNL(n),PCMC(n),CDM(n,d)]
-    #optimizer = optim.SGD(model.parameters(), lr=0.001)#, momentum=0.9)
+    #models = [MNL(n),PCMC(n),CDM(n,d),BP(n=n,k=3,d=2)]
+
+
+    models = [BP(n=n,k=3,d=2)]
+    U_0 = models[0].parameters().next()
+
     for model in models:
         if str(model)=='PCMC':
-            #print models[0]
             utils = models[0].parameters().next().data.numpy()
-            #print utils
             g= np.exp(utils)
             g/= np.sum(g)
-            #print gamma
-            #print g
-            model = PCMC(n,gamma=g,batch=False)
+            #model = PCMC(n,gamma=g,batch=False)
         optimizer = optim.Adam(model.parameters())
+        #optimizer = optim.SGD(model.parameters(), lr=0.001)#, momentum=0.9)
 
         for epoch in range(20):  # loop over the dataset multiple times
 
@@ -229,8 +265,8 @@ if __name__ == '__main__':
                         (epoch + 1, i + 1, running_loss / 200))
                     running_loss = 0.0
 
-            print('Finished Training')
+            print(str(model)+' Finished Training')
 
-    #for model in models:
-    #    for x in model.parameters():
-    #        print x.data
+    for model in models:
+        for x in model.parameters():
+            print(x)

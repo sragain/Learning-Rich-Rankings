@@ -35,7 +35,7 @@ def plot_one_scores_setsizes_with_hist(Scores,dset,dsetnum,dtype):
         positions = [];means=[];sems=[];sizes=[]
         if model not in Scores:
             continue
-            
+
         for i in Scores[model]:
             if len(Scores[model][i])==0:
                 continue
@@ -227,7 +227,7 @@ def print_all_losses(Scores,dset,dtype,unif=False,re=False):
     re- whether this was a repeated elimination model
     """
     means = {}; sems = {}
-    model_list = ['MNL','CDM-d=1','CDM-d=4','CDM-d=8','PCMC']
+    model_list = ['MNL','CDM-d=1','CDM-d=4','CDM-d=8']
     rankings = 0
     for dsetid in Scores:
         for model in model_list:
@@ -252,8 +252,8 @@ def print_all_losses(Scores,dset,dtype,unif=False,re=False):
     means_list = []
     sems_list = []
     labels = []
-    print 'datasets, rankings:'
-    print len(means['MNL']),rankings
+    print('datasets, rankings:')
+    print(len(means['MNL']),rankings)
     for model in model_list:
         if model not in means:
             continue
@@ -297,20 +297,20 @@ def parse():
     parser = argparse.ArgumentParser(description='ctr data parser')
     parser.add_argument('-dset', help="dataset name", default=None)
     parser.add_argument('-dtype', help="data type", default='soi')
-    parser.add_argument('-setsize', help = 'whether to compute losses by setsize', default='y')
-    parser.add_argument('-all', help='whether to aggregate over all datasets in directory (y/n)', default='n')
+    parser.add_argument('-setsize', help = 'whether to compute losses by setsize', default='n')
+    parser.add_argument('-all', help='whether to aggregate over all datasets in directory (y/n)', default='y')
     parser.add_argument('-re', help='whether to plot for RE models (y/n)', default='n')
     parser.add_argument('-hist', help='whether to include a histogram of the ranking lengths(y/n)', default='n')
     args = parser.parse_args()
 
     #checks whether the dataset is in the right place
     if args.dset not in os.listdir(os.getcwd()+os.sep+'cache'+os.sep+'computed_errors'):
-        print 'no errors found in cache to plot'
+        print('no errors found in cache to plot')
         assert False
 
     #checks whether the datatype is known
     if args.dtype not in ['soi','soc']:
-        print 'invalid datatype'
+        print('invalid datatype')
         assert False
 
     #compute booleans and/or strings based on other input arguments
@@ -334,14 +334,14 @@ def parse():
     #call the appropriate plotting or printing function
     if all:
         if setsize:
-            print 'comparing losses as a function of choice set size across different datasets is not supported'
+            print('comparing losses as a function of choice set size across different datasets is not supported')
         else:
             #outputs combined losses for all the datasets in the folder to a text file
-            print 'computing losses for all datasets in '+args.dset
+            print('computing losses for all datasets in '+args.dset)
             print_all_losses(Scores,args.dset,args.dtype,re=re)
     elif setsize:
         for dataset in Scores:
-            print 'plotting losses for '+dataset
+            print('plotting losses for '+dataset)
             if args.dtype == 'soi' and hist:
                 plot_one_scores_setsizes_with_hist(Scores[dataset],args.dset,dataset,args.dtype)
             else:
@@ -349,7 +349,7 @@ def parse():
 
     else: #
         for dataset in Scores:
-            print dataset
+            print(dataset)
             print_one_losses(Scores[dataset],args.dset,dataset,args.dtype,re=re)
 
 if __name__ == '__main__':

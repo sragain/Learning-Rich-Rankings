@@ -5,16 +5,17 @@ from torch.autograd import Variable
 from models import *
 from scrape import *
 import math
+from functools import reduce
 
-def evaluate_loss_setsizes(perms,n,models_k,criterion=nn.NLLLoss,Losses = None):
+def evaluate_loss_setsizes(perms,n,model_list,criterion=nn.NLLLoss,Losses = None):
     """
     returns losses given by the model for the specified loss criterion
-    grouped by input setsize
+    grouped by input setsize for some fold
 
     Args:
-    X- set indicator tensors
-    Y- choice index tensors
-    model- choice model
+    perms- list of permutations
+    n- number of items
+    model_list- list of choice models
     criterion- loss function used
     Losses- losses already computed
     """
@@ -25,42 +26,50 @@ def evaluate_loss_setsizes(perms,n,models_k,criterion=nn.NLLLoss,Losses = None):
     dataset = torch.utils.data.TensorDataset(X,Y)
     testloader = torch.utils.data.DataLoader(dataset)
     dataiter = iter(testloader)
-    images, labels = dataiter.next()
     for data in testloader:
         x,y = data
-        for model in models_k:
+        for model in model_list:
             output = model(Variable(x))
             target = Variable(y)
             loss = output.data.numpy()
             Losses[str(model)][int(torch.sum(x))].append(loss[0][int(y.numpy())])
     return Losses
 
-def evaluate_log_loss(perms,n,models_k,Losses = None,Losses_unif = None):
+def evaluate_log_loss(perms,n,model_list,Losses = None,Losses_unif = None,RE=False):
     """
     returns losses given by the model for the specified loss criterion
     grouped by input setsize
 
     Args:
-    X- set indicator tensors
-    Y- choice index tensors
-    model- choice model
-    criterion- loss function used
+    perms- permutations
+    n- number of alternatives
+    model_list- list of models
     Losses- losses already computed
+    Losses_unif- unif losses already computed
+    re- whether we're doing re
     """
-    #unif_losses[k] is loss of uniform dist for top k list
-    unif_losses = np.cumsum(map(np.log,range(1,n+1)[::-1]))
-    ls = {}
-    for model in models_k:
-        ls[model]=0
 
+    #unif_losses[k] is loss of uniform dist for top k list
+    unif_losses = np.cumsum(list(map(np.log,range(1,n+1)[::-1])))
+    ls = {}
+    for model in model_list:
+        ls[model]=0
     for sigma in perms:
-        for model in models_k:
+        for model in model_list:
             ls[str(model)]=0
+        if RE: #must adjust probs for normalization, Z_k(RE,p) = (n choose k)
+            for i in range(1,len(sigma)):
+                ls[str(model)]-=np.log(i)
+            for i in range(n-len(sigma)+1,n+1):
+                ls[str(model)]+=np.log(i)
+
         if not sigma: #when sigma is empty we skip
             continue
 
-        for model in models_k:
-            X,Y= RS_choices([sigma],n)
+        for model in model_list:
+            X,Y= RS_choices([sigma],n)#don't need flipped for RE-flipped at train time
+
+
             for idx in range(len(sigma)):
                 S = torch.Tensor(X[idx,:])
                 S = Variable(S[None,:])
@@ -75,7 +84,7 @@ def evaluate_log_loss(perms,n,models_k,Losses = None,Losses_unif = None):
                     s = np.array([x for x in range(n) if s[0,x]==1])
                     assert False
 
-        for model in models_k:
+        for model in model_list:
             improvement = unif_losses[len(sigma)-1]-ls[str(model)]
             #assert not math.isnan(improvement)
             #assert not math.isnan(ls[str(model)])
@@ -112,7 +121,7 @@ def trawl(path,dset,dtype,setsize,RE):
         n = reduce(lambda x,y: max(x,y),map(max2,L))+1
         #if 'n' not in Losses:
         #    Losses['n']=n
-        print 'Computing losses for '+modelpath#,n,len(L),max(map(len,L))
+        print ('Computing losses for '+modelpath)
 
         train = cv_data['train']; test = cv_data['test']; L = cv_data['data']
         Losses[modelpath]={}#{'n':n}
@@ -136,17 +145,17 @@ def trawl(path,dset,dtype,setsize,RE):
             test_perms  = [L[x] for x in test[k]]
             #for sigma in test_perms:
             #    print sigma
-            models_k = [cv_data[model][k] for model in models]
+            model_list = [cv_data[model][k] for model in models]
             if setsize:
-                Losses[modelpath] = evaluate_loss_setsizes(test_perms,n,models_k,Losses=Losses[modelpath])
+                assert not RE #can't do RE for partial lists at the moment
+                Losses[modelpath] = evaluate_loss_setsizes(test_perms,n,model_list,Losses=Losses[modelpath])
             else:
-                Losses[modelpath],Losses_unif[modelpath] = evaluate_log_loss(test_perms,n,models_k,Losses=Losses[modelpath],Losses_unif=Losses_unif[modelpath])
+                Losses[modelpath],Losses_unif[modelpath] = evaluate_log_loss(test_perms,n,model_list,Losses=Losses[modelpath],Losses_unif=Losses_unif[modelpath],RE=RE)
 
 
     s=''
     if RE:
         s+='-RE'
-    print save_path
     if setsize:
         pickle.dump(Losses,open(save_path+dtype+'-setsize'+s+'.p','wb'))
     else:
@@ -163,7 +172,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ctr data parser')
     parser.add_argument('-dset', help="dataset name", default=None)
     parser.add_argument('-dtype', help="dataset type", default='soi')
-    parser.add_argument('-setsize', help = 'whether to compute losses by setsize', default='y')
+    parser.add_argument('-setsize', help = 'whether to compute losses by setsize (y/n)', default='n')
     parser.add_argument('-re', help = 'whether to compute for RE models (y/n)', default='n')
 
     #parser.add_argument('-epochs', action="number of epochs to use", dest="c", type=int)
@@ -171,10 +180,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.dset not in ['sushi','soi','nascar','letor','soc','election']:
-        print 'invalid dataset'
+        print('invalid dataset')
         assert False
     if args.dtype not in ['soi','soc']:
-        print 'invalid datatype'
+        print('invalid datatype')
         assert False
     if args.dset=='soc':
         args.dtype='soc'

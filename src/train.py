@@ -1,8 +1,9 @@
 import sys,os,pickle,argparse
 import numpy as np
 from models import *
-#from sklearn.model_selection import KFold
-from sklearn.cross_validation import KFold
+from sklearn.model_selection import KFold
+#deprecated
+#from sklearn.cross_validation import KFold
 from scrape import *
 import argparse
 from torch.multiprocessing import Pool
@@ -37,7 +38,7 @@ def fit(X,Y,model,criterion= nn.NLLLoss(),epochs=20,batch_size=1,verbose=True,pr
 
     for epoch in range(epochs):  # loop over the dataset multiple times
         running_loss = 0.0
-        print 'Starting epoch '+str(epoch)+' of '+str(epochs)
+        print('Starting epoch '+str(epoch)+' of '+str(epochs))
         for i, data in enumerate(dataloader, 0):
             inputs, labels = data
 
@@ -57,7 +58,7 @@ def fit(X,Y,model,criterion= nn.NLLLoss(),epochs=20,batch_size=1,verbose=True,pr
             optimizer.step()
 
             # print statistics
-            running_loss += loss.data[0]
+            running_loss += loss.data.item()
             if not verbose:
                 continue
             if i % print_batches == print_batches-1:    # print every 200 mini-batches
@@ -78,21 +79,20 @@ def cv(L,n,models,save_path,K=5,epochs=20,batch_size=1,opt='Adam',seed=True,RE=F
     K- number of folds
     epochs- number of times to loop over the data
     """
-    #kf = KFold(n_splits=5,shuffle=True)
-    #splits = kf.split(L)
-    kf = KFold(len(L),n_folds=K,shuffle=True)
-    k = 0
+    kf = KFold(n_splits=K,shuffle=True)
+    splits = kf.split(L)
     split_store = {'train':[],'test':[],'data':L}
     for model in models:
         split_store[str(model)]=[]
-    for train,test in kf:#splits:
+    for k,(train,test) in enumerate(splits):
 
-        print 'Beginning fold'+str(k)+' of '+str(K)
+
+        print('Beginning fold'+str(k)+' of '+str(K))
 
         #scrape training choices and fit model
         X_train,Y_train = RS_choices([L[x] for x in train],n)
         for model in models:
-            print 'training RS-'+str(model)
+            print('training RS-'+str(model))
             if seed and str(model) == 'PCMC':
                 utils = models[0].parameters().next().data.numpy()
                 #print utils
@@ -105,7 +105,6 @@ def cv(L,n,models,save_path,K=5,epochs=20,batch_size=1,opt='Adam',seed=True,RE=F
         #store everything
         split_store['train'].append(train)
         split_store['test'].append(test)
-        k+=1
 
     if not RE:
         pickle.dump(split_store,open(save_path+'.p','wb'))
@@ -118,10 +117,21 @@ def parallel_helper(tup):
     unpacks a tuple so that we can apply the function cv in parallel
     (Pool does not allow mapping of an anonymous function)
     """
-    L,n,models,save_path,epochs,batch_size,opt,seed,RE = tup
-    return cv(L,n,models,save_path,epochs=epochs,batch_size=batch_size,opt=opt,seed=seed,RE=RE)
+    L,n,models,save_path,epochs,batch_size,opt,seed,RE,K = tup
+    return cv(L,n,models,save_path,epochs=epochs,batch_size=batch_size,opt=opt,seed=seed,RE=RE,K=K)
 
-def trawl(dset,dtype,epochs,parallel=False,batch_size=1,max_n=30,max_rankings=1000,opt='Adam',num_dsets=10,seed=True,RE=False):
+def ensure_dir(file_path):
+    """
+    helper function from stack overflow that automatically makes directories
+    in the cache for me
+    thanks to this:
+    https://stackoverflow.com/questions/273192/how-can-i-safely-create-a-nested-directory-in-python
+    """
+    directory = os.path.dirname(file_path)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+def trawl(dset,dtype,epochs,parallel=False,batch_size=1,max_n=30,max_rankings=1000,opt='Adam',num_dsets=10,seed=True,RE=False,K=5):
     """
     trawls over a directory and fits models to all data files
 
@@ -137,9 +147,8 @@ def trawl(dset,dtype,epochs,parallel=False,batch_size=1,max_n=30,max_rankings=10
     num_dsets- number of datasets to fit
     seed- whether to seed PCMC
     RE- whether to compute repeated elimianation (RS if false)
+    K- number of CV folds for each dataset
     """
-
-
     #we will loop over the datasets stored in this directory
     path = os.getcwd()+os.sep+'data'+os.sep+dset
     files = os.listdir(path)
@@ -151,6 +160,7 @@ def trawl(dset,dtype,epochs,parallel=False,batch_size=1,max_n=30,max_rankings=10
     job_list = []
     batch = (batch_size>1)
     for filename in files:#loop over the directory
+        print(filename)
         if filename.endswith(dtype):#will
             filepath = path+os.sep+filename
             if dtype=='soi':
@@ -164,10 +174,10 @@ def trawl(dset,dtype,epochs,parallel=False,batch_size=1,max_n=30,max_rankings=10
                     reason = 'too many rankings- '+str(len(L))+', max is '+str(max_rankings)
                 else:
                     reason = 'too many alternatives- '+str(n)+', max is '+str(max_n)
-                print filename+' skipped, '+reason
+                print(filename+' skipped, '+reason)
                 continue
             else:
-                print filename+' added'
+                print(filename+' added')
 
             #collect models
             models = []
@@ -176,18 +186,21 @@ def trawl(dset,dtype,epochs,parallel=False,batch_size=1,max_n=30,max_rankings=10
                     continue
                 models.append(CDM(n=n,d=d))
             models.append(MNL(n))
-            models.append(PCMC(n,batch=batch))
+            #models.append(PCMC(n,batch=batch))
 
+            ###
+            #models.append(BP(n=n,k=3,d=2))
+            #models=[BP(n=n,k=3,d=2)]
             #append tuple containing all the ojects needed to train the model on the dataset
-            job_list.append((L,n,models,save_path+filename[:-4]+'-'+dtype,epochs,batch_size,opt,seed,False))
+            job_list.append((L,n,models,save_path+filename[:-4]+'-'+dtype,epochs,batch_size,opt,seed,False,K))
             if RE:
-                job_list.append((map(lambda x:x[::-1],L),n,models,save_path+filename[:-4]+'-'+dtype,epochs,batch_size,opt,seed,True))
+                job_list.append((map(lambda x:x[::-1],L),n,models,save_path+filename[:-4]+'-'+dtype,epochs,batch_size,opt,seed,True,K))
             if len(job_list)>=num_dsets:
-                print 'maximum number of datasets reached'
-                break
+                print('maximum number of datasets reached')
+                continue
 
-    print str(len(job_list))+' datasets total'
-    print str(sum(map(lambda x: len(x[0]),job_list)))+ ' total rankings'
+    print(str(len(job_list))+' datasets total')
+    print(str(sum(map(lambda x: len(x[0]),job_list)))+ ' total rankings')
     #sorts the jobs by number of alternatives*number of (partial) rankings
     #will roughly be the number of choices, up to partial ranking length
     sorted(job_list,key=lambda x: x[1]*len(x[0]))
@@ -196,7 +209,7 @@ def trawl(dset,dtype,epochs,parallel=False,batch_size=1,max_n=30,max_rankings=10
         p = Pool(4)
         p.map(parallel_helper,job_list)
     else:
-        map(parallel_helper,job_list)
+        [x for x in map(parallel_helper,job_list)]
 
 def parse():
     """
@@ -213,20 +226,15 @@ def parse():
     parser.add_argument('-opt', help='SGD or Adam', default='Adam')
     parser.add_argument('-num_dsets', help='how many datasets to use', default='100')
     parser.add_argument('-seed_pcmc', help='whether to seed pcmc with MNL (y/n)', default = 'n')
-    parser.add_argument('-fit_re', help='whether to train RE models (y/n)', default = 'n')
+    parser.add_argument('-re', help='whether to train RE models (y/n)', default = 'n')
+    parser.add_argument('-folds', help='number of folds for cv on each dataset', default='5')
     args = parser.parse_args()
 
-    if args.dset not in ['sushi','soi','nascar','letor','soc','election']:
-        print 'wrong data folder'
-        assert False
     if args.dtype not in ['soi','soc']:
-        print 'wrong data type'
+        print('wrong data type')
         assert False
     if args.opt not in ['SGD','Adam']:
-        print 'optmizer can be SGD or Adam'
-        assert False
-    if args.fit_re == 'y' and args.dtype=='soi':
-        print 'cannot fit RE models to top-k rankings'
+        print('optmizer can be SGD or Adam')
         assert False
     if args.dset=='soc':
         args.dtype='soc'
@@ -234,12 +242,13 @@ def parse():
     if args.dset == 'soi':
         path += os.sep+'filtered'
     if args.seed_pcmc not in ['y','n']:
-        print 'y or n required for -seed_pcmc'
+        print('y or n required for -seed_pcmc')
     seed = (args.seed_pcmc=='y')
-    re = (args.fit_re == 'y')
+    RE = (args.re == 'y')
+    K = int(args.folds)
     trawl(args.dset,args.dtype,epochs=int(args.epochs),batch_size=int(args.batch_size),
           max_n=int(args.max_n),max_rankings=int(args.max_rankings),opt=args.opt,
-          num_dsets=int(args.num_dsets),seed=seed,RE=re)
+          num_dsets=int(args.num_dsets),seed=seed,RE=RE,K=K)
 
 if __name__ == '__main__':
     parse()
